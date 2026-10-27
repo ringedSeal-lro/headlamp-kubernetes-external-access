@@ -1,55 +1,48 @@
 # Kubernetes External Access
 
-Automação da exposição de serviços em clusters Kubernetes utilizando MetalLB, NGINX Ingress Controller e Headlamp. O projeto permite disponibilizar uma interface web de gerenciamento do cluster por meio de um endereço IP externo e de regras de roteamento HTTP.
+Automation for exposing services in Kubernetes clusters using MetalLB, NGINX Ingress Controller, and Headlamp. This project makes a web-based cluster management interface available through an external IP address and HTTP routing rules.
 
-A configuração foi desenvolvida para um ambiente Kubernetes executado em Linux, utilizando o modo IPVS do `kube-proxy` e o MetalLB em modo Layer 2 para anunciar endereços IP na rede local.
+The configuration was developed for a Kubernetes environment running on Linux, using `kube-proxy` in IPVS mode and MetalLB in Layer 2 mode to advertise IP addresses on the local network.
 
-## Arquitetura
+## Architecture
 
-O fluxo de acesso é composto pelos seguintes componentes:
+The access flow consists of the following components:
 
-1. **MetalLB:** gerencia a alocação de endereços IP externos para serviços do tipo `LoadBalancer` e anuncia esses endereços na rede local.
+1. **MetalLB:** manages external IP address allocation for `LoadBalancer` services and advertises these addresses on the local network.
     
-2. **NGINX Ingress Controller:** recebe as requisições HTTP e encaminha o tráfego conforme as regras Ingress configuradas.
+2. **NGINX Ingress Controller:** receives HTTP requests and forwards traffic according to the configured Ingress rules.
     
-3. **Headlamp:** fornece uma interface web para visualização e gerenciamento de recursos Kubernetes.
+3. **Headlamp:** provides a web interface for viewing and managing Kubernetes resources.
     
-4. **kube-proxy com IPVS:** implementa o encaminhamento de tráfego dos serviços Kubernetes, com `strictARP` habilitado para o cenário de anúncio Layer 2.
+4. **kube-proxy with IPVS:** handles Kubernetes service traffic forwarding, with `strictARP` enabled for the Layer 2 advertisement scenario.
     
 
-## Arquivos do repositório
+## Repository Files
 
-|Arquivo|Descrição|
+|File|Description|
 |---|---|
-|`install.sh`|Automatiza a instalação e a configuração dos componentes.|
-|`uninstall.sh`|Automatiza a remoção dos componentes instalados pelo projeto.|
-|`IPPool.yaml`|Define o `IPAddressPool` e o `L2Advertisement` utilizados pelo MetalLB.|
-|`headlamp-ingress.yaml`|Define a regra de roteamento HTTP para o serviço Headlamp.|
+|`install.sh`|Automates component installation and configuration.|
+|`uninstall.sh`|Automates the removal of components installed by the project.|
+|`IPPool.yaml`|Defines the `IPAddressPool` and `L2Advertisement` resources used by MetalLB.|
+|`headlamp-ingress.yaml`|Defines the HTTP routing rule for the Headlamp service.|
 
-## 1. Pré-requisitos
+## 1. Prerequisites
 
-Antes de iniciar, verifique se o ambiente possui:
+Before getting started, ensure that the environment has:
 
-- Cluster Kubernetes operacional.
-    
-- `kubectl` configurado com permissões suficientes para modificar os recursos do cluster.
-    
-- Helm instalado.
-    
-- Linux nos nós em que os módulos IPVS serão habilitados.
-    
-- Python 3 e PyYAML disponíveis no ambiente de execução do script, caso a configuração automatizada do `kube-proxy` seja utilizada.
-    
-- Endereços IP reservados para o MetalLB e disponíveis na rede local.
-    
-- Conectividade entre a rede cliente, os nós Kubernetes e o endereço IP externo.
-    
-- Os quatro arquivos deste repositório disponíveis no mesmo diretório.
+- An operational Kubernetes cluster.
+- `kubectl` configured with sufficient permissions to modify cluster resources.
+- Helm installed.
+- Linux on the nodes where IPVS kernel modules will be enabled.
+- Python 3 and PyYAML available in the script execution environment if automated `kube-proxy` configuration is enabled.
+- IP addresses reserved for MetalLB and available on the local network.
+- Network connectivity between the client network, Kubernetes nodes, and the external IP address.
+- All four repository files available in the same directory.
     
 
-O ambiente de referência utiliza Kubernetes `v1.34.x`, MetalLB `v0.15.3` e NGINX Ingress Controller `2.5.1`. Verifique a compatibilidade das versões com a distribuição Kubernetes utilizada.
+The reference environment uses Kubernetes `v1.34.x`, MetalLB `v0.15.3`, and NGINX Ingress Controller `2.5.1`. Check version compatibility with your Kubernetes distribution.
 
-Confirme o contexto ativo antes de executar alterações:
+Verify the active context before making changes:
 
 ```
 kubectl config current-context
@@ -57,13 +50,13 @@ kubectl get nodes
 helm version
 ```
 
-## 2. Configuração do ambiente
+## 2. Environment Configuration
 
-O script de instalação automatiza a configuração do `kube-proxy`, a instalação dos componentes, a aplicação dos manifestos e as verificações finais.
+The installation script automates `kube-proxy` configuration, component installation, manifest application, and final validation.
 
-Por padrão, a configuração dos módulos do kernel não é executada pelo script, pois ele não pressupõe acesso administrativo a todos os nós do cluster. Os módulos IPVS devem estar carregados em cada nó relevante.
+By default, the script does not configure kernel modules because it does not assume administrative access to every cluster node. The IPVS modules must be loaded on each relevant node.
 
-Em cada nó Linux, execute:
+Run the following commands on each Linux node:
 
 ```
 sudo modprobe ip_vs
@@ -73,26 +66,26 @@ sudo modprobe ip_vs_sh
 sudo modprobe nf_conntrack
 ```
 
-Para persistir o carregamento após a reinicialização:
+To persist module loading across reboots:
 
 ```
 printf "ip_vs\nip_vs_rr\nip_vs_wrr\nip_vs_sh\nnf_conntrack\n" \
   | sudo tee /etc/modules-load.d/ipvs.conf
 ```
 
-Verifique os módulos carregados:
+Verify that the modules are loaded:
 
 ```
 lsmod | grep -E 'ip_vs|nf_conntrack'
 ```
 
-Caso deseje utilizar o script para configurar também a máquina em que ele é executado, defina `CONFIGURE_LOCAL_NODE=true`. Essa opção não configura automaticamente os demais nós Kubernetes.
+To configure the machine running the script as well, set `CONFIGURE_LOCAL_NODE=true`. This option does not automatically configure the other Kubernetes nodes.
 
-## 3. Configuração do kube-proxy
+## 3. kube-proxy Configuration
 
-Por padrão, o script ajusta o ConfigMap `kube-proxy` para utilizar IPVS e habilitar `strictARP`.
+By default, the installation script updates the `kube-proxy` ConfigMap to use IPVS and enable `strictARP`.
 
-As propriedades configuradas são:
+The configured properties are:
 
 ```
 mode: "ipvs"
@@ -100,65 +93,57 @@ ipvs:
   strictARP: true
 ```
 
-A alteração preserva as demais propriedades da configuração processada pelo script. Em seguida, os pods do `kube-proxy` são recriados para carregar as novas configurações.
+The modification preserves the other configuration properties processed by the script. The `kube-proxy` pods are then recreated to load the new configuration.
 
-O script utiliza Python com PyYAML para modificar o YAML armazenado no ConfigMap. Caso essa dependência não esteja instalada, providencie-a antes da execução.
+The script uses Python and PyYAML to modify the YAML stored in the ConfigMap. Install this dependency before running the script if it is not already available.
 
-Para pular a configuração automatizada do `kube-proxy`:
+To skip automated `kube-proxy` configuration:
 
 ```
 KUBEPROXY_CONFIGURE=false ./install.sh
 ```
 
-Essa opção pressupõe que o `kube-proxy` já esteja configurado conforme as necessidades do ambiente. Se necessário, realize a configuração manualmente antes de prosseguir.
+This option assumes that `kube-proxy` is already configured as required by the environment. If necessary, configure it manually before proceeding.
 
-**Importante:** antes de modificar o `kube-proxy`, recomenda-se salvar a configuração original para permitir uma restauração manual caso seja necessário.
+**Important:** before modifying `kube-proxy`, save the original configuration so that it can be restored manually if needed.
 
 ```
 kubectl get configmap kube-proxy -n kube-system -o yaml \
   > kube-proxy-backup.yaml
 ```
 
-## 4. Instalação
+## 4. Installation
 
-Dê permissão de execução aos scripts:
+Make both scripts executable:
 
 ```
 chmod +x install.sh uninstall.sh
 ```
 
-Execute a instalação:
+Run the installation script:
 
 ```
 ./install.sh
 ```
 
-O script realiza as seguintes operações:
+The script performs the following operations:
 
-1. Verifica as dependências, os manifestos e o acesso ao cluster.
-    
-2. Configura os módulos IPVS na máquina local, caso essa opção esteja habilitada.
-    
-3. Ajusta o `kube-proxy` para IPVS e `strictARP`, quando habilitado.
-    
-4. Instala o MetalLB e aguarda a inicialização dos componentes.
-    
-5. Aplica o `IPPool.yaml`.
-    
-6. Instala ou atualiza o NGINX Ingress Controller com o tipo de serviço `LoadBalancer`.
-    
-7. Instala ou atualiza o Headlamp por meio do Helm.
-    
-8. Aplica o `headlamp-ingress.yaml`.
-    
-9. Verifica os recursos implantados e realiza um teste HTTP de roteamento.
+1. Checks dependencies, manifests, and cluster access.
+2. Configures IPVS modules on the local machine if this option is enabled.
+3. Configures `kube-proxy` to use IPVS and `strictARP` when enabled.
+4. Installs MetalLB and waits for its components to become ready.
+5. Applies `IPPool.yaml`.
+6. Installs or upgrades the NGINX Ingress Controller with a `LoadBalancer` service.
+7. Installs or upgrades Headlamp using Helm.
+8. Applies `headlamp-ingress.yaml`.
+9. Checks the deployed resources and performs an HTTP routing test.
     
 
-O script utiliza variáveis de ambiente para permitir ajustes nas versões, no endereço IP externo e no host utilizado pelo Headlamp.
+The script uses environment variables to allow adjustments to component versions, the external IP address, and the hostname used for Headlamp.
 
-## 5. Configuração do endereço IP externo
+## 5. External IP Address Configuration
 
-O arquivo `IPPool.yaml` define uma faixa de endereços disponível para o MetalLB:
+The `IPPool.yaml` file defines the IP address range available to MetalLB:
 
 ```
 apiVersion: metallb.io/v1beta1
@@ -181,74 +166,74 @@ spec:
     - metallb-single-ip
 ```
 
-O endereço externo utilizado como exemplo é `192.168.1.240`, que deve estar disponível dentro do intervalo configurado.
+The example uses `192.168.1.240` as the external IP address. This address must be available within the configured range.
 
-Para definir o endereço durante a instalação:
+To specify the address during installation:
 
 ```
 EXTERNAL_IP=192.168.1.240 ./install.sh
 ```
 
-O endereço informado deve pertencer à faixa definida em `IPPool.yaml`, ser compatível com a rede local e não conflitar com endereços utilizados por outros dispositivos ou distribuídos pelo DHCP.
+The specified address must belong to the range defined in `IPPool.yaml`, be compatible with the local network, and not conflict with addresses used by other devices or assigned through DHCP.
 
-O manifesto também define o recurso `L2Advertisement`, responsável por configurar o anúncio dos endereços na rede local.
+The manifest also defines the `L2Advertisement` resource, which configures address advertisement on the local network.
 
-## 6. Acesso ao Headlamp
+## 6. Accessing Headlamp
 
-O arquivo `headlamp-ingress.yaml` define uma regra Ingress para o host `headlamp.local`, encaminhando as requisições para o serviço `my-headlamp`, na porta 80, dentro do namespace `kube-system`.
+The `headlamp-ingress.yaml` file defines an Ingress rule for the `headlamp.local` hostname. It forwards requests to the `my-headlamp` service on port 80 in the `kube-system` namespace.
 
-Para acessar a interface pelo navegador, configure a resolução do nome `headlamp.local` para o endereço IP externo. Em um cliente Linux, adicione a seguinte entrada ao arquivo `/etc/hosts`:
+To access the interface through a browser, configure `headlamp.local` to resolve to the external IP address. On a Linux client, add the following entry to `/etc/hosts`:
 
 ```
 192.168.1.240 headlamp.local
 ```
 
-Em seguida, acesse:
+Then open:
 
 ```
 http://headlamp.local
 ```
 
-Também é possível testar diretamente o roteamento HTTP, enviando o cabeçalho `Host`:
+You can also test HTTP routing directly by sending the `Host` header:
 
 ```
 curl -H "Host: headlamp.local" http://192.168.1.240/
 ```
 
-Uma resposta HTTP indica que houve comunicação com o ponto de entrada. Para confirmar o funcionamento completo, verifique se a resposta corresponde à aplicação Headlamp e se os recursos Kubernetes necessários estão operacionais.
+An HTTP response indicates that communication with the entry point was established. To confirm that the setup is fully operational, verify that the response corresponds to the Headlamp application and that the required Kubernetes resources are running correctly.
 
-**Nota sobre HTTPS:** o manifesto de exemplo contém uma anotação referente ao cert-manager, mas não define uma seção `tls` no Ingress. Portanto, a configuração apresentada neste tutorial demonstra o acesso HTTP. O uso de HTTPS exige configuração adicional de TLS, incluindo certificado e os recursos necessários no ambiente.
+**HTTPS note:** the example manifest includes an annotation referencing cert-manager, but it does not define a `tls` section in the Ingress resource. Therefore, this tutorial demonstrates HTTP access. HTTPS requires additional TLS configuration, including a certificate and the necessary resources in the environment.
 
-## 7. Validação da instalação
+## 7. Installation Validation
 
-Após a execução, verifique os componentes do MetalLB:
+After installation, check the MetalLB components:
 
 ```
 kubectl get pods -n metallb-system
 kubectl get ipaddresspools,l2advertisements -n metallb-system
 ```
 
-Verifique o NGINX Ingress Controller:
+Check the NGINX Ingress Controller:
 
 ```
 kubectl get pods -n nginx-ingress
 kubectl get svc -n nginx-ingress
 ```
 
-Verifique o Headlamp e a regra Ingress:
+Check Headlamp and the Ingress rule:
 
 ```
 kubectl get pods,svc -n kube-system
 kubectl get ingress -n kube-system
 ```
 
-O serviço do NGINX deve apresentar o endereço configurado na coluna `EXTERNAL-IP`.
+The NGINX service should display the configured address in the `EXTERNAL-IP` column.
 
-## 8. Diagnóstico
+## 8. Troubleshooting
 
-Caso a instalação não funcione como esperado, consulte o estado dos recursos e os eventos do cluster.
+If the installation does not work as expected, inspect the cluster resources and events.
 
-### Endereço externo em `Pending`
+### External IP Address Stuck in `Pending`
 
 ```
 kubectl get svc -n nginx-ingress
@@ -256,9 +241,9 @@ kubectl get ipaddresspools,l2advertisements -n metallb-system
 kubectl get pods -n metallb-system
 ```
 
-Verifique se o endereço solicitado pertence ao pool do MetalLB e se os componentes de anúncio estão operacionais.
+Check whether the requested address belongs to the MetalLB pool and whether the advertisement components are operational.
 
-### Problemas no roteamento HTTP
+### HTTP Routing Issues
 
 ```
 kubectl get ingress -n kube-system
@@ -266,18 +251,18 @@ kubectl describe ingress headlamp -n kube-system
 kubectl get svc -n kube-system
 ```
 
-Confira se a classe Ingress, o nome do serviço de destino e a porta configurada em `headlamp-ingress.yaml` correspondem aos recursos instalados.
+Check that the Ingress class, backend service name, and port configured in `headlamp-ingress.yaml` match the installed resources.
 
-### Problemas na configuração IPVS
+### IPVS Configuration Issues
 
 ```
 kubectl get configmap kube-proxy -n kube-system -o yaml
 kubectl get pods -n kube-system -l k8s-app=kube-proxy
 ```
 
-Verifique se `mode` está definido como `ipvs`, se `strictARP` está habilitado e se os pods do `kube-proxy` estão operacionais.
+Verify that `mode` is set to `ipvs`, `strictARP` is enabled, and the `kube-proxy` pods are operational.
 
-### Problemas nos componentes do NGINX
+### NGINX Component Issues
 
 ```
 kubectl get pods -n nginx-ingress
@@ -285,80 +270,66 @@ kubectl get svc -n nginx-ingress
 helm list -n nginx-ingress
 ```
 
-Para consultar os logs, identifique primeiro o nome do pod do controlador:
+To inspect the logs, first identify the controller pod name:
 
 ```
 kubectl get pods -n nginx-ingress
-kubectl logs -n nginx-ingress <nome-do-pod>
+kubectl logs -n nginx-ingress <pod-name>
 ```
 
-Os nomes dos serviços e os seletores utilizados nos comandos de diagnóstico podem variar conforme a versão e os valores do chart instalados.
+Service names and selectors used in troubleshooting commands may vary depending on the installed chart version and values.
 
-## 9. Desinstalação
+## 9. Uninstallation
 
-O repositório inclui o script `uninstall.sh` para automatizar a remoção dos componentes instalados pelo projeto.
+The repository includes `uninstall.sh` to automate the removal of components installed by the project.
 
-Execute:
+Run:
 
 ```
 ./uninstall.sh
 ```
 
-O script solicita confirmação antes de prosseguir. Para executar sem a confirmação interativa:
+The script asks for confirmation before proceeding. To run it without interactive confirmation:
 
 ```
 ./uninstall.sh --yes
 ```
 
-O processo de desinstalação contempla:
+The uninstallation process includes:
 
-1. Remoção do Ingress do Headlamp.
-    
-2. Desinstalação do release Helm do Headlamp.
-    
-3. Desinstalação do release Helm do NGINX Ingress Controller.
-    
-4. Remoção do `IPAddressPool` e do `L2Advertisement` definidos pelo projeto.
-    
-5. Remoção da instalação do MetalLB.
+1. Removing the Headlamp Ingress resource.
+2. Uninstalling the Headlamp Helm release.
+3. Uninstalling the NGINX Ingress Controller Helm release.
+4. Removing the `IPAddressPool` and `L2Advertisement` resources defined by the project.
+5. Removing the MetalLB installation.
     
 
-O script verifica se os releases Helm e os recursos esperados existem antes de tentar removê-los.
+The script checks whether the expected Helm releases and resources exist before attempting to remove them.
 
-### Cuidados durante a desinstalação
+### Uninstallation Considerations
 
-- **MetalLB compartilhado:** a remoção da instalação do MetalLB pode afetar outros serviços `LoadBalancer` do cluster. Confirme que nenhum outro serviço depende dele antes de executar o script.
-    
-- **Configuração do kube-proxy:** o script de desinstalação não restaura automaticamente a configuração original do `kube-proxy`. Caso seja necessário reverter a alteração para IPVS, utilize o backup da configuração e planeje a restauração de acordo com a distribuição Kubernetes.
-    
-- **Módulos IPVS:** os módulos carregados no Linux e o arquivo `/etc/modules-load.d/ipvs.conf` não são removidos automaticamente.
-    
-- **Recursos compartilhados:** verifique se o namespace e os recursos do cluster são utilizados por outras aplicações antes de realizar limpezas adicionais.
+- **Shared MetalLB installation:** removing MetalLB may affect other `LoadBalancer` services in the cluster. Confirm that no other services depend on it before running the script.
+- **kube-proxy configuration:** the uninstallation script does not automatically restore the original `kube-proxy` configuration. If the IPVS configuration must be reverted, use the backup and plan the restoration according to your Kubernetes distribution.
+- **IPVS modules:** modules loaded in Linux and the `/etc/modules-load.d/ipvs.conf` file are not automatically removed.
+- **Shared resources:** check whether the namespace and cluster resources are used by other applications before performing additional cleanup.
     
 
-A desinstalação dos componentes não significa que todas as alterações feitas no ambiente foram revertidas. Revise o estado do cluster após a execução.
+Uninstalling the components does not mean that all environment changes have been reverted. Review the cluster state after execution.
 
-## 10. Considerações de segurança e operação
+## 10. Security and Operational Considerations
 
-- O intervalo de endereços IP utilizado deve estar disponível e ser compatível com a rede local.
-    
-- A configuração dos módulos do kernel precisa ser persistida em todos os nós relevantes.
-    
-- O script pressupõe permissões administrativas no cluster e pode alterar componentes de rede.
-    
-- Uma única réplica do NGINX Ingress Controller não garante alta disponibilidade.
-    
-- O Headlamp oferece acesso administrativo conforme as permissões associadas à identidade utilizada. Proteja o acesso e evite expor a interface em redes não confiáveis.
-    
-- O teste HTTP não substitui a configuração de HTTPS, autenticação e autorização.
-    
-- A execução repetida do script de instalação utiliza operações de instalação ou atualização do Helm, mas não garante reversão automática de alterações parcialmente aplicadas.
-    
-- Antes de utilizar os scripts em um ambiente compartilhado ou de produção, revise os manifestos e as alterações realizadas no cluster.
+- The IP address range must be available and compatible with the local network.
+- Kernel module configuration must persist across reboots on all relevant nodes.
+- The scripts require administrative cluster permissions and may modify networking components.
+- A single NGINX Ingress Controller replica does not provide high availability.
+- Headlamp provides access according to the permissions associated with the configured identity. Protect access and avoid exposing the interface to untrusted networks.
+- The HTTP test does not replace HTTPS, authentication, or authorization configuration.
+- Re-running the installation script uses Helm installation or upgrade operations, but does not guarantee automatic rollback of partially applied changes.
+- Before using the scripts in a shared or production environment, review the manifests and the changes made to the cluster.
     
 
-## Objetivo
+## Purpose
 
-Este projeto serve como referência prática para automatizar a publicação de serviços web em clusters Kubernetes, combinando alocação de endereços IP, anúncio Layer 2 e roteamento HTTP.
+This project serves as a practical reference for automating web service exposure in Kubernetes clusters by combining IP address allocation, Layer 2 advertisement, and HTTP routing.
 
-Embora o exemplo utilize o Headlamp, a infraestrutura pode ser adaptada para disponibilizar outras aplicações e APIs compatíveis com Ingress.
+Although the example uses Headlamp, the infrastructure can be adapted to expose other applications and APIs compatible with Ingress.
