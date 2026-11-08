@@ -1,4 +1,3 @@
-
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
@@ -111,6 +110,12 @@ configure_kube_proxy() {
     return
   fi
 
+  if ! kubectl get configmap kube-proxy -n kube-system >/dev/null 2>&1; then
+    warn "ConfigMap kube-system/kube-proxy não encontrado (cluster não-kubeadm ou sem kube-proxy)."
+    warn "Configuração do kube-proxy ignorada; ajuste-a manualmente se necessário."
+    return
+  fi
+
   log "Configurando kube-proxy para IPVS e strictARP..."
 
   local tmp_json
@@ -156,14 +161,19 @@ PY
 
   rm -f "$tmp_json" "$patched_json"
 
-  # Solicita a recriação dos pods para recarregar a configuração.
-  kubectl delete pods \
-    -n kube-system \
-    -l k8s-app=kube-proxy \
-    --wait=false ||
-    warn "Não foi possível recriar os pods pelo seletor k8s-app=kube-proxy."
-
   log "ConfigMap kube-proxy atualizado."
+
+  # Recria os pods e aguarda que voltem a funcionar com a nova configuração.
+  # Se os módulos IPVS não estiverem disponíveis nos nós, o kube-proxy não
+  # fica pronto e o restante da instalação falharia de forma menos clara.
+  if kubectl get daemonset kube-proxy -n kube-system >/dev/null 2>&1; then
+    kubectl rollout restart daemonset/kube-proxy -n kube-system
+    kubectl rollout status daemonset/kube-proxy \
+      -n kube-system --timeout=180s ||
+      die "kube-proxy não ficou pronto em modo IPVS. Verifique se os módulos ip_vs, ip_vs_rr, ip_vs_wrr, ip_vs_sh e nf_conntrack estão carregados em todos os nós (kubectl logs -n kube-system -l k8s-app=kube-proxy). Restaure o backup do ConfigMap se necessário."
+  else
+    warn "DaemonSet kube-system/kube-proxy não encontrado; reinicie o kube-proxy manualmente."
+  fi
 }
 
 install_metallb() {
@@ -179,7 +189,19 @@ install_metallb() {
     -n "$METALLB_NAMESPACE" --timeout=240s
 
   log "Aplicando pool de IPs e anúncio Layer 2..."
-  kubectl apply -f "$IPPOOL_FILE"
+
+  # O webhook de validação do MetalLB pode levar alguns segundos para aceitar
+  # conexões mesmo após o rollout do controller; tenta novamente até ~2 min.
+  local attempt
+  for attempt in $(seq 1 24); do
+    if kubectl apply -f "$IPPOOL_FILE"; then
+      break
+    fi
+    [[ "$attempt" -lt 24 ]] ||
+      die "Não foi possível aplicar $IPPOOL_FILE (webhook do MetalLB indisponível?)."
+    warn "Webhook do MetalLB ainda não está pronto; nova tentativa em 5s (${attempt}/24)..."
+    sleep 5
+  done
 
   kubectl get ipaddresspools,l2advertisements \
     -n "$METALLB_NAMESPACE"

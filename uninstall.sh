@@ -1,4 +1,3 @@
-
 #!/usr/bin/env bash
 
 set -Eeuo pipefail
@@ -104,7 +103,8 @@ WARNING:
 EOF
 
     if [[ "$CONFIRM" != true ]]; then
-        read -r -p "Continue with uninstallation? [y/N] " answer
+        local answer=""
+        read -r -p "Continue with uninstallation? [y/N] " answer || true
         [[ "$answer" =~ ^[Yy]$ ]] ||
             { log "Uninstallation cancelled."; exit 0; }
     fi
@@ -135,7 +135,11 @@ EOF
     # 4. Remove MetalLB custom resources before removing MetalLB.
     log "Removing MetalLB IP pool configuration..."
 
-    if [[ -f "$IPPOOL_FILE" ]]; then
+    # Without the MetalLB CRDs, kubectl fails even with --ignore-not-found.
+    if ! kubectl get crd ipaddresspools.metallb.io \
+        >/dev/null 2>&1; then
+        log "MetalLB CRDs not found; skipping IP pool removal."
+    elif [[ -f "$IPPOOL_FILE" ]]; then
         kubectl delete -f "$IPPOOL_FILE" \
             --ignore-not-found=true
     else
